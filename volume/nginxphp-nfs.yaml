@@ -1,0 +1,235 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-conf
+data:
+  nginx.conf: |
+    user  nginx;
+    worker_processes  1;
+    error_log  /var/log/nginx/error.log warn;
+    pid        /var/run/nginx.pid;
+    events {
+        worker_connections  1024;
+    }
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+        log_format  main
+                      'remote_addr:$remote_addr\t'
+                      'time_local:$time_local\t'
+                      'method:$request_method\t'
+                      'uri:$request_uri\t'
+                      'host:$host\t'
+                      'status:$status\t'
+                      'bytes_sent:$body_bytes_sent\t'
+                      'referer:$http_referer\t'
+                      'useragent:$http_user_agent\t'
+                      'forwardedfor:$http_x_forwarded_for\t'
+                      'request_time:$request_time';
+
+        access_log	/var/log/nginx/access.log main;
+        sendfile        on;
+        #tcp_nopush     on;
+        keepalive_timeout  65;
+        #gzip  on;
+        include /etc/nginx/conf.d/*.conf;
+    }
+
+  vhost.conf: |
+    #    upstream app {
+    #      server localhost:8089;
+    #      keepalive 1024;
+    #    }
+    #    server {
+    #      listen 80 default_server;
+    #      root /var/www/html;
+    #      access_log /var/log/nginx/app.access_log main;
+    #      error_log /var/log/nginx/app.error_log;
+    #      location / {
+    #        proxy_pass http://app/;
+    #        proxy_http_version 1.1;
+    #      }
+    #    }
+
+    server {
+        listen       80;
+        server_name  localhost;
+        #charset koi8-r;
+        root     /var/www/html;
+        #access_log  /var/log/nginx/log/host.access.log  main;
+        location / {
+            root   /var/www/html;
+            index  index.html index.htm;
+        }
+        #error_page  404              /404.html;
+        # redirect server error pages to the static page /50x.html
+        #
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   /var/www/html;
+        }
+        # proxy the PHP scripts to Apache listening on 127.0.0.1:80
+        #
+        #location ~ \.php$ {
+        #    proxy_pass   http://127.0.0.1;
+        #}
+        # pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+        #
+        location ~ \.php$ {
+            fastcgi_pass   php:9000;
+            fastcgi_index  index.php;
+            fastcgi_param  SCRIPT_FILENAME  /var/www/html$fastcgi_script_name;
+            include        fastcgi_params;
+        }
+        # deny access to .htaccess files, if Apache's document root
+        # concurs with nginx's one
+        #
+        #location ~ /\.ht {
+        #    deny  all;
+        #}
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment-nfspvc
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-nfspvc
+  template:
+    metadata:
+      labels:
+        app: nginx-nfspvc
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.10
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - mountPath: "/var/www/html"
+              name: nfs-pv001
+            - mountPath: "/etc/nginx/nginx.conf" # mount nginx-conf volumn to /etc/nginx
+              readOnly: true
+              name: nginx-conf
+              subPath: nginx.conf
+            - mountPath: "/etc/nginx/conf.d/default.conf"
+              readOnly: true
+              name: nginx-conf-vhost
+              subPath: default.conf
+            - mountPath: "/var/log/nginx"
+              name: log
+      volumes:
+        - name: nfs-pv001
+          persistentVolumeClaim:
+            claimName: nfs-pvc001
+        - name: nginx-conf
+          configMap:
+            name: nginx-conf
+            items:
+              - key: nginx.conf
+                path: nginx.conf
+        - name: nginx-conf-vhost
+          configMap:
+            name: nginx-conf
+            items:
+              - key: vhost.conf
+                path: default.conf
+        - name: log
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-server
+  labels:
+    name: php-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: php-server
+  template:
+    metadata:
+      labels:
+        app: php-server
+    spec:
+      containers:
+        - name: php-server
+          image: php:fpm-buster
+          volumeMounts:
+            - mountPath: /var/www/html/
+              name: nginx-data
+          ports:
+            - containerPort: 9000
+      volumes:
+        - name: nginx-data
+          persistentVolumeClaim:
+            claimName: nfs-pvc001
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: php
+spec:
+  ports:
+    - name: php
+      port: 9000
+      protocol: TCP
+      targetPort: 9000
+  selector:
+    app: php-server
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service-nodeport
+spec:
+  ports:
+    - port: 8000
+      targetPort: 80
+      nodePort: 8089
+      protocol: TCP
+  type: NodePort
+  selector:
+    app: nginx-nfspvc
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv001
+  labels:
+    pv: nfs-pv001
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Recycle
+  storageClassName: nfs
+  nfs:
+    path: /home/timeless/nfs/pv001
+    server: 192.168.2.129
+
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-pvc001
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: nfs
+  selector:
+    matchLabels:
+      pv: nfs-pv001
