@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-client-provisioner
+spec:
+  replicas: 1                              #指定副本数量为1
+  selector:
+    matchLabels:
+      app: nfs-client-provisioner
+  strategy:
+    type: Recreate                      #指定策略类型为重置
+  template:
+    metadata:
+      labels:
+        app: nfs-client-provisioner
+    spec:
+      containers:
+        - name: nfs-client-provisioner
+          image: registry.cn-hangzhou.aliyuncs.com/open-ali/nfs-client-provisioner     #使用的镜像
+          volumeMounts:
+            - name: nfs-client-root
+              mountPath: /persistentvolumes             #指定容器内挂载的目录
+          env:
+            - name: PROVISIONER_NAME           #容器内的变量用于指定提供存储的名称
+              value: zjz
+            - name: NFS_SERVER                      #容器内的变量用于指定nfs服务的IP地址
+              value: 192.168.2.129
+            - name: NFS_PATH                       #容器内的变量指定nfs服务器对应的目录
+              value: /home/timeless/nfs/pv00
+      volumes: #指定挂载到容器内的nfs的路径及IP
+        - name: nfs-client-root
+          nfs:
+            server: 192.168.2.129
+            path: /home/timeless/nfs/pv001
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: stateful-nfs
+  namespace: xiaojiang-test
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"  #---设置为默认的 storageclass
+provisioner: zjz
+reclaimPolicy: Retain
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: test-pvc
+spec:
+  storageClassName: stateful-nfs #---需要与上面创建的storageclass的名称一致
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: headless-svc                    #从名称就可以是无头服务
+  labels:
+    app: headless-svc
+spec:
+  ports:
+    - port: 80
+      name: myweb
+  selector:
+    app: headless-pod
+  clusterIP: None                        #不分配群集的IP地址，所以不具备负载均衡的能力
+
+---
+apiVersion: apps/v1
+kind: StatefulSet                          #定义pod中运行的应用
+metadata:
+  name: statefulset-test
+spec:
+  serviceName: headless-svc
+  replicas: 3
+  selector:
+    matchLabels:
+      app: headless-pod
+  template:
+    metadata:
+      labels:
+        app: headless-pod
+    spec:
+      containers:
+        - image: httpd
+          name: myhttpd
+          ports:
+            - containerPort: 80
+              name: httpd
+          volumeMounts:
+            - mountPath: /usr/local/apache2/htdocs
+              name: test
+      volumes:
+        - name: test
+          persistentVolumeClaim:
+            claimName: test-pvc

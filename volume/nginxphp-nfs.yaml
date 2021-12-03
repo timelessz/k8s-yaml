@@ -217,7 +217,6 @@ spec:
     path: /home/timeless/nfs/pv001
     server: 192.168.2.129
 
-
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
