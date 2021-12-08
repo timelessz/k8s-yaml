@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: nfs-client-provisioner
 spec:
-  replicas: 1                              #指定副本数量为1
+  replicas: 4                             #指定副本数量为1
   selector:
     matchLabels:
       app: nfs-client-provisioner
@@ -26,19 +26,18 @@ spec:
             - name: NFS_SERVER                      #容器内的变量用于指定nfs服务的IP地址
               value: 192.168.2.129
             - name: NFS_PATH                       #容器内的变量指定nfs服务器对应的目录
-              value: /home/timeless/nfs/pv00
+              value: /home/timeless/nfs
       volumes: #指定挂载到容器内的nfs的路径及IP
         - name: nfs-client-root
           nfs:
             server: 192.168.2.129
-            path: /home/timeless/nfs/pv001
+            path: /home/timeless/nfs
 
 ---
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: stateful-nfs
-  namespace: xiaojiang-test
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"  #---设置为默认的 storageclass
 provisioner: zjz
@@ -55,7 +54,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Mi
+      storage: 100Mi
 
 ---
 apiVersion: v1
@@ -79,7 +78,7 @@ metadata:
   name: statefulset-test
 spec:
   serviceName: headless-svc
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: headless-pod
