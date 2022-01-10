@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nfs-provisioner
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nfs-provisioner-runner
+  namespace: default
+rules:
+  - apiGroups: [ "" ]
+    resources: [ "persistentvolumes" ]
+    verbs: [ "get", "list", "watch", "create", "delete" ]
+  - apiGroups: [ "" ]
+    resources: [ "persistentvolumeclaims" ]
+    verbs: [ "get", "list", "watch", "update" ]
+  - apiGroups: [ "storage.k8s.io" ]
+    resources: [ "storageclasses" ]
+    verbs: [ "get", "list", "watch" ]
+  - apiGroups: [ "" ]
+    resources: [ "events" ]
+    verbs: [ "watch", "create", "update", "patch" ]
+  - apiGroups: [ "" ]
+    resources: [ "services", "endpoints" ]
+    verbs: [ "get","create","list", "watch","update" ]
+  - apiGroups: [ "extensions" ]
+    resources: [ "podsecuritypolicies" ]
+    resourceNames: [ "nfs-provisioner" ]
+    verbs: [ "use" ]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: run-nfs-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: nfs-provisioner
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: nfs-provisioner-runner
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-client-provisioner
+  labels:
+    app: nfs-client-provisioner
+  # replace with namespace where provisioner is deployed
+  namespace: default
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nfs-client-provisioner
+  template:
+    metadata:
+      labels:
+        app: nfs-client-provisioner
+    spec:
+      serviceAccountName: nfs-provisioner
+      containers:
+        - name: nfs-client-provisioner
+          image: registry.cn-hangzhou.aliyuncs.com/jiayu-kubernetes/nfs-subdir-external-provisioner:v4.0.0
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: nfs-client-root
+              mountPath: /persistentvolumes
+          env:
+            - name: PROVISIONER_NAME
+              value: k8s/nfs-subdir-external-provisioner
+            - name: NFS_SERVER
+              value: 192.168.2.129
+            - name: NFS_PATH
+              value: /home/timeless/nfs/pv002
+      volumes:
+        - name: nfs-client-root
+          nfs:
+            server: 192.168.2.129  # NFS SERVER_IP
+            path: /home/timeless/nfs/pv002
+
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nginx-nfs
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"  # 是否设置为默认的storageclass
+provisioner: k8s/nfs-subdir-external-provisioner # or choose another name, must match deployment's env PROVISIONER_NAME'
+allowVolumeExpansion: true
+parameters:
+  archiveOnDelete: "false" # 设置为"false"时删除PVC不会保留数据,"true"则保留数据
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+spec:
+  clusterIP: None
+  selector:
+    app: nginx
+  ports:
+    - name: web
+      port: 80
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  podManagementPolicy: OrderedReady  #pod名-> 0-N,删除N->0
+  replicas: 3
+  revisionHistoryLimit: 10
+  serviceName: nginx
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata: #name没写，会默认生成的
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: web #填vcp名字
+              mountPath: /usr/share/nginx/test
+  volumeClaimTemplates:
+    - metadata:
+        name: web
+      spec:
+        accessModes:
+          - ReadWriteMany
+        storageClassName: nginx-nfs
+        volumeMode: Filesystem
+        resources:
+          requests:
+            storage: 512M
+

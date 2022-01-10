@@ -1,0 +1,32 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: abc-ingress
+  annotations: 
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  tls:
+  - hosts:
+    - api.abc.com
+    secretName: abc-tls
+  rules:
+  - host: api.abc.com
+    http:
+      paths:
+      - backend:
+          serviceName: apiserver
+          servicePort: 80
+  - host: www.abc.com
+    http:
+      paths:
+      - path: /image/*
+        backend:
+          serviceName: fileserver
+          servicePort: 80
+  - host: www.abc.com
+    http:
+      paths:
+      - backend:
+          serviceName: feserver
+          servicePort: 8080

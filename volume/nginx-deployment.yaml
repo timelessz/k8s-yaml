@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment-nfspvc
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-nfspvc
+  template:
+    metadata:
+      labels:
+        app: nginx-nfspvc
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.10
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - mountPath: "/var/www/html"
+              name: nfs-pv001
+      volumes:
+        - name: nfs-pv001
+          persistentVolumeClaim:
+            claimName: nfs-pvc001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service-nodeport
+spec:
+  ports:
+    - port: 8000
+      targetPort: 80
+      nodePort: 8089
+      protocol: TCP
+  type: NodePort
+  selector:
+    app: nginx-nfspvc
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv001
+  labels:
+    pv: nfs-pv001
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Recycle
+  storageClassName: nfs
+  nfs:
+    path: /home/timeless/nfs/pv001
+    server: 192.168.2.129
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-pvc001
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: nfs
+  selector:
+    matchLabels:
+      pv: nfs-pv001
