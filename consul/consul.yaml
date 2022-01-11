@@ -25,7 +25,11 @@ spec:
                     operator: In
                     values:
                       - master
-
+      tolerations:
+        - key: "master"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
       containers:
         - name: consul
           image: consul:latest
@@ -112,6 +116,8 @@ spec:
     - name: consul-dns
       port: 8600
       targetPort: 8600
+
+
 ---
 apiVersion: v1
 kind: Service
@@ -122,11 +128,11 @@ spec:
     name: consul-server
   type: NodePort
   ports:
-    - protocol: TCP
-      port: 8500
+    - port: 8500
       targetPort: 8500
       nodePort: 30098
       name: consul-server-tcp
+
 
 ---
 
@@ -145,6 +151,10 @@ spec:
       labels:
         name: consul-client
     spec:
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: consul
           image: consul:latest
@@ -156,8 +166,8 @@ spec:
             - "-client=0.0.0.0"
             - "-advertise=$(POD_IP)"
             - "-retry-join=consul-server-0.consul-server.$(NAMESPACE).svc.cluster.local"
-            - "-retry-join=consul-server-1.consul-server.$(NAMESPACE).svc.cluster.local"
-            - "-retry-join=consul-server-2.consul-server.$(NAMESPACE).svc.cluster.local"
+#            - "-retry-join=consul-server-1.consul-server.$(NAMESPACE).svc.cluster.local"
+#            - "-retry-join=consul-server-2.consul-server.$(NAMESPACE).svc.cluster.local"
             - "-domain=cluster.local"
             - "-disable-host-node-id"
           env:
