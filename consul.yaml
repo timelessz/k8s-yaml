@@ -191,5 +191,5 @@ spec:
       volumes:
         - name: consul-data-dir
           hostPath:
-            path: /Users/xuan/desktop/consul/data
+            path: /Users/xuan/desktop/consul/data`
             type: DirectoryOrCreate
