@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: volume-test-nginx-pod1
+  namespace: test
+  labels:
+    name: vol-pod1
+spec:
+  containers:
+  - name: ngix-pod1
+    image: nginx
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 500m
+      limits:
+        memory: 200Mi
+        cpu: 1000m
+    ports:
+      - containerPort: 80
+    volumeMounts:
+      - name: vol-nginx-data
+        mountPath: /usr/share/nginx/html  # 容器的数据目录
+  volumes:   # volumes和container处于同一层级，别搞错了
+    - name:  vol-nginx-data
+      hostPath:
+        path:  /data/nginx-data  # 宿主机目录
